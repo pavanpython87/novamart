@@ -1,0 +1,10 @@
+# Cross-channel SKU -> unified product_id mapping strategy
+# Populated at runtime from src/cleaning/sku_mapper.py; this file holds
+# manual overrides for cases fuzzy matching can't resolve confidently.
+
+manual_overrides: []
+# Example:
+# - shopify_sku: "SH-1234"
+#   amazon_asin: "B00ABC1234"
+#   pos_internal_sku: "POS-9981"
+#   unified_product_id: "PROD-000123"

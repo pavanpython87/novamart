@@ -1,0 +1,28 @@
+# BigQuery table definitions + partitioning (used by src/load/bigquery_loader.py)
+
+dataset: novamart
+
+tables:
+  fact_orders:
+    partition_by: date_key
+    cluster_by: [channel_key, customer_key]
+  fact_returns:
+    partition_by: return_date_key
+  fact_shipments:
+    partition_by: ship_date_key
+    cluster_by: [carrier]
+  fact_inventory_daily:
+    partition_by: snapshot_date_key
+    cluster_by: [product_key]
+  dim_customers:
+    partition_by: null
+  dim_products:
+    partition_by: null
+  dim_dates:
+    partition_by: null
+  dim_channels:
+    partition_by: null
+
+free_tier_limits:
+  storage_gb: 10
+  query_tb_per_month: 1

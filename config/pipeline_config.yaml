@@ -1,0 +1,56 @@
+# Source definitions, thresholds, feature flags
+
+sources:
+  shopify:
+    format: csv
+    incoming_dir: data/incoming/shopify
+    incremental_mode: file_registry
+  amazon:
+    format: xlsx
+    incoming_dir: data/incoming/amazon
+    incremental_mode: file_registry
+  pos:
+    format: json
+    incoming_dir: data/incoming/pos
+    incremental_mode: file_registry
+  products:
+    format: sqlite
+    incoming_dir: data/incoming/products
+    incremental_mode: high_water_mark
+    hwm_column: updated_at
+  customers:
+    format: csv
+    incoming_dir: data/incoming/customers
+    incremental_mode: file_registry
+  shipping_fedex:
+    format: xml
+    incoming_dir: data/incoming/shipping
+    file_pattern: "fedex_*.xml"
+    incremental_mode: file_registry
+  shipping_ups:
+    format: csv
+    incoming_dir: data/incoming/shipping
+    file_pattern: "ups_*.csv"
+    incremental_mode: file_registry
+  shipping_usps:
+    format: flat_file
+    incoming_dir: data/incoming/shipping
+    file_pattern: "usps_*.txt"
+    incremental_mode: file_registry
+
+quality_gate_thresholds:
+  null_pct_spike_warn: 20        # percentage points
+  row_count_drop_fail_pct: 50    # percent drop vs previous batch triggers FAIL
+  new_column_action: log_and_alert
+  missing_column_action: fail
+  type_change_action: warn
+
+warehouse:
+  backend: duckdb   # duckdb | bigquery
+  landing_db: data/landing/novamart_landing.db
+  quarantine_db: data/quarantine/novamart_quarantine.db
+  processing_db: data/processing/novamart_processing.duckdb
+  serving_db: data/serving/novamart_serving.duckdb
+
+run_modes:
+  default: incremental

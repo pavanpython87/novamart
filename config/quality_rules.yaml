@@ -1,0 +1,41 @@
+# Validation rule definitions per source (evaluated by Great Expectations suite)
+
+shopify:
+  required_columns: [order_id, customer_email, order_date, total_amount, status]
+  business_rules:
+    - rule: total_amount_positive
+      column: total_amount
+      condition: ">= 0"
+      on_fail: quarantine
+    - rule: order_date_not_future
+      column: order_date
+      condition: "<= today"
+      on_fail: quarantine
+
+amazon:
+  required_columns: [amazon_order_id, asin, order_date, item_price]
+  business_rules:
+    - rule: item_price_positive
+      column: item_price
+      condition: ">= 0"
+      on_fail: quarantine
+
+pos:
+  required_columns: [transaction_id, timestamp, total]
+  business_rules:
+    - rule: total_positive
+      column: total
+      condition: ">= 0"
+      on_fail: quarantine
+
+shipping:
+  required_columns: [tracking_number, ship_date]
+  business_rules:
+    - rule: delivery_after_ship
+      condition: "delivery_date >= ship_date"
+      on_fail: warn
+
+referential_integrity:
+  - orders.sku_must_exist_in_products
+  - orders.customer_must_exist_in_customers
+  - shipments.order_must_exist_in_orders

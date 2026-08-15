@@ -1,0 +1,43 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Env / secrets
+.env
+*.credentials.json
+gcp-key.json
+
+# Data (generated, not committed)
+data/incoming/*
+data/landing/*
+data/processing/*
+data/serving/*
+data/quarantine/*
+data/exports/*
+data/profiling_reports/*
+!data/incoming/**/.gitkeep
+!data/landing/.gitkeep
+!data/processing/.gitkeep
+!data/serving/.gitkeep
+!data/quarantine/.gitkeep
+!data/exports/.gitkeep
+!data/profiling_reports/.gitkeep
+
+# Keep logs (per project plan they're committed) but ignore local scratch
+data/logs/*.tmp
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Docker
+*.pid

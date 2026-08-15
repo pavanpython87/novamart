@@ -1,0 +1,63 @@
+# Data volumes, chaos levels, seasonal parameters for the data simulator
+
+historical:
+  start_date: "2024-01-01"
+  end_date: "2025-12-31"
+
+base_daily_volume:
+  shopify: 50
+  amazon: 40
+  pos: 25
+  shipping: 35
+
+frequency:
+  pos: "hourly"          # 20-35 txns/run
+  shopify: "every_6_hours" # 100-200 orders/run
+  amazon: "daily"         # 400-600 orders/day
+  shipping: "daily"       # ~250 shipments/day
+  customers: "weekly"     # 200-400 new/week
+  products: "monthly"     # 10-20 new/month
+
+day_of_week_multiplier:
+  monday: 1.0
+  tuesday: 1.0
+  wednesday: 1.0
+  thursday: 1.0
+  friday: 1.0
+  saturday: 1.3
+  sunday: 1.1
+
+monthly_growth_rate: 0.03
+
+seasonal_multipliers:
+  q4_holiday: 2.5          # Nov-Dec
+  black_friday_weekend: 4.0
+  prime_day_amazon: 2.0    # July, Amazon only
+  back_to_school: 1.5      # Aug-Sep, electronics
+  january_clearance_orders: 0.8
+  january_clearance_returns: 1.8
+  summer_lull: 0.85         # Jun-Jul
+
+return_rates:
+  amazon: 0.06
+  shopify: 0.04
+  pos: 0.02
+
+chaos:
+  default_level: 1.0   # multiplier applied to all issue rates below
+  categories:
+    format_issues: true
+    data_quality: true
+    schema_drift: true
+    semantic_conflicts: true
+    encoding_problems: true
+
+quality_degradation_timeline:
+  month_1_5: baseline
+  month_6: shopify_schema_drift        # adds discount_type column
+  month_7_8: gradual_quality_decline
+  month_9: amazon_breaking_schema      # referral_fee -> referral_fee_amount
+  month_10_11: duplicate_file_uploads
+  month_12: pos_system_upgrade         # v3 -> v4 JSON structure
+  month_13_18: increasing_chaos
+  month_19_24: stabilization
