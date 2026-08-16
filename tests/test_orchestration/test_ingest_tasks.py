@@ -47,6 +47,22 @@ def test_ingest_source_no_files_returns_empty(tmp_path):
     tracker.close()
 
 
+def test_ingest_source_file_registry_skips_corrupt_file(tmp_path):
+    incoming = tmp_path / "incoming" / "shopify"
+    _write_csv(incoming / "good1.csv", ["O1,10.0", "O2,20.0"])
+    (incoming / "corrupt.csv").write_text("", encoding="utf-8")  # chaos: emptied file
+    _write_csv(incoming / "good2.csv", ["O3,30.0"])
+
+    source = SourceConfig(name="shopify", format="csv", incoming_dir=incoming, incremental_mode="file_registry")
+    tracker = IncrementalTracker(tmp_path / "tracker.db")
+
+    df = ingest_source.fn(source, tracker)
+
+    # Both good files are still ingested despite the corrupt one in between.
+    assert len(df) == 3
+    tracker.close()
+
+
 def test_ingest_source_hwm_mode(tmp_path):
     import sqlite3
 

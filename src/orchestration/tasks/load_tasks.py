@@ -7,19 +7,25 @@ from __future__ import annotations
 
 import pandas as pd
 from prefect import task
+from prefect.cache_policies import NO_CACHE
 
 from src.load.dual_loader import DualLoader
 from src.load.duckdb_loader import DuckDBLoader
 
+# Caching disabled on both tasks below: DualLoader/DuckDBLoader wrap a live
+# duckdb.DuckDBPyConnection, which can't be hashed/pickled into a cache key
+# (Prefect would otherwise raise a HashError on every call — same issue as
+# ingest_source's IncrementalTracker, see ingest_tasks.py).
 
-@task(name="load-table", retries=3, retry_delay_seconds=10)
+
+@task(name="load-table", retries=3, retry_delay_seconds=10, cache_policy=NO_CACHE)
 def load_table(table_name: str, df: pd.DataFrame, dual_loader: DualLoader, scd2: bool = False) -> dict[str, str]:
     if df.empty:
         return {}
     return dual_loader.load(table_name, df, scd2=scd2)
 
 
-@task(name="write-duckdb-tables", retries=3, retry_delay_seconds=10)
+@task(name="write-duckdb-tables", retries=3, retry_delay_seconds=10, cache_policy=NO_CACHE)
 def write_duckdb_tables(duckdb_loader: DuckDBLoader, tables: dict[str, pd.DataFrame]) -> list[str]:
     """Replaces each named table with the given DataFrame's contents.
     Used for staging/mart tables that aren't part of the fixed star schema

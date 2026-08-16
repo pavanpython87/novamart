@@ -6,14 +6,12 @@ from src.validation.expectations_suite import ExpectationSuite
 def test_expectation_suite_validates_against_real_config():
     df = pd.DataFrame({
         "order_id": ["1", "2"],
-        "customer_email": ["a@x.com", "b@x.com"],
         "order_date": ["2024-01-01", "2024-01-02"],
-        "total_amount": [10.0, -5.0],
-        "status": ["paid", "paid"],
+        "gross_revenue": [10.0, -5.0],
     })
-    suite = ExpectationSuite("shopify")
+    suite = ExpectationSuite("orders")
     result = suite.validate(df)
-    assert result["source"] == "shopify"
+    assert result["source"] == "orders"
     assert result["quarantine_mask"].tolist() == [False, True]
 
 

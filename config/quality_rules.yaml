@@ -1,10 +1,18 @@
-# Validation rule definitions per source (evaluated by Great Expectations suite)
+# Validation rule definitions, evaluated by src/validation/rules_engine.py.
+#
+# Rules are keyed by *canonical* dataset name (orders / shipments), not by
+# raw channel (shopify/amazon/pos/fedex/ups/usps). Validation runs after
+# canonical field mapping (see src/orchestration/flows/main_pipeline.py
+# build_orders()/build_shipments_fact()) so one rule set — written against
+# canonical column names — applies correctly across every channel, instead
+# of each channel's raw native columns (e.g. Shopify's "Total"/"Created at"
+# vs Amazon's "item-price" vs FedEx's "TrackingNumber"/"ShipDate").
 
-shopify:
-  required_columns: [order_id, customer_email, order_date, total_amount, status]
+orders:
+  required_columns: [order_id, order_date, gross_revenue]
   business_rules:
-    - rule: total_amount_positive
-      column: total_amount
+    - rule: gross_revenue_positive
+      column: gross_revenue
       condition: ">= 0"
       on_fail: quarantine
     - rule: order_date_not_future
@@ -12,27 +20,11 @@ shopify:
       condition: "<= today"
       on_fail: quarantine
 
-amazon:
-  required_columns: [amazon_order_id, asin, order_date, item_price]
-  business_rules:
-    - rule: item_price_positive
-      column: item_price
-      condition: ">= 0"
-      on_fail: quarantine
-
-pos:
-  required_columns: [transaction_id, timestamp, total]
-  business_rules:
-    - rule: total_positive
-      column: total
-      condition: ">= 0"
-      on_fail: quarantine
-
-shipping:
-  required_columns: [tracking_number, ship_date]
+shipments:
+  required_columns: [tracking_number, ship_date_key]
   business_rules:
     - rule: delivery_after_ship
-      condition: "delivery_date >= ship_date"
+      condition: "delivery_date_key >= ship_date_key"
       on_fail: warn
 
 referential_integrity:

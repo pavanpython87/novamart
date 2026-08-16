@@ -1,7 +1,15 @@
-"""Full pipeline DAG: ingests every configured source, runs each through
-profile -> validate -> clean, maps the order-bearing sources
-(shopify/amazon/pos) onto the canonical order-line shape, computes revenue
-economics, builds the analytics marts, and writes everything to DuckDB.
+"""Full pipeline DAG: ingests every configured source, profiles each raw
+source, maps the order-bearing sources (shopify/amazon/pos) onto the
+canonical order-line shape and the carrier feeds onto the canonical
+shipments shape, validates/quarantines those canonical frames against
+quality_rules.yaml, computes revenue economics, builds the analytics
+marts, and writes everything to DuckDB.
+
+Validation runs after canonical mapping rather than on each source's raw
+data because quality_rules.yaml's rules are written against canonical
+column names (order_id, gross_revenue, tracking_number, ...), which don't
+exist until shopify/amazon/pos/fedex/ups/usps have been mapped onto their
+shared shape — see _validate_canonical.
 
 Per source, ingestion/profiling/validation failures are caught and logged
 rather than raised, so one bad source doesn't block the others (see
@@ -37,7 +45,6 @@ from src.orchestration.canonical_mapping import (
     CANONICAL_FIELD_MAPS,
     DEDUP_KEYS,
     ORDER_SOURCES,
-    rules_key_for_source,
 )
 from src.orchestration.tasks.dedup_tasks import dedup_orders
 from src.orchestration.tasks.ingest_tasks import ingest_source
@@ -88,39 +95,50 @@ def _ingest_all_sources(sources: dict[str, SourceConfig], tracker: IncrementalTr
     return raw_frames
 
 
-def _validate_and_clean(
+def _profile_sources(
     raw_frames: dict[str, pd.DataFrame], baseline_manager: BaselineManager,
-    quarantine_manager: QuarantineManager, batch_id: str,
-) -> tuple[dict[str, pd.DataFrame], dict[str, dict]]:
-    """Profiles + validates each non-empty source, returning each source's
-    clean (post-quarantine) rows plus its quality scorecard. A
-    profiling/validation error for one source logs a warning and passes its
-    raw data through unchanged."""
+) -> dict[str, dict]:
+    """Profiles each non-empty source and returns its quality scorecard.
+
+    Business-rule validation/quarantine no longer happens per-raw-source
+    here: quality_rules.yaml is defined in terms of canonical column names
+    (order_id, gross_revenue, tracking_number, ship_date_key, ...), which
+    only exist after canonical field mapping — a raw Shopify/FedEx frame's
+    native columns (Name/Total, TrackingNumber/ShipDate) never matched
+    those rule names, so every rule silently skipped. See
+    _validate_canonical, called on the canonical orders/shipments frames
+    later in this flow, for where validation actually runs now."""
     run_logger = _run_logger()
-    clean_frames: dict[str, pd.DataFrame] = {}
     scorecards: dict[str, dict] = {}
 
     for name, raw_df in raw_frames.items():
         if raw_df.empty:
-            clean_frames[name] = raw_df
             continue
-
         try:
             profile_result = profile_and_score(raw_df, name, baseline_manager)
             scorecards[name] = profile_result["scorecard"]
         except Exception as exc:
             run_logger.warning("Profiling failed for source=%s: %s", name, exc)
 
-        try:
-            result = validate_and_quarantine(
-                raw_df, rules_key_for_source(name), quarantine_manager, batch_id=batch_id,
-            )
-            clean_frames[name] = result["clean_df"]
-        except Exception as exc:
-            run_logger.warning("Validation failed for source=%s, passing raw data through: %s", name, exc)
-            clean_frames[name] = raw_df
+    return scorecards
 
-    return clean_frames, scorecards
+
+def _validate_canonical(
+    df: pd.DataFrame, rules_key: str, quarantine_manager: QuarantineManager, batch_id: str,
+) -> pd.DataFrame:
+    """Runs quality_rules.yaml's business rules for `rules_key` ("orders" or
+    "shipments") against a canonical (post-mapping) DataFrame, quarantining
+    failing rows. A validation error logs a warning and passes the data
+    through unchanged rather than failing the whole run."""
+    if df.empty:
+        return df
+    run_logger = _run_logger()
+    try:
+        result = validate_and_quarantine(df, rules_key, quarantine_manager, batch_id=batch_id)
+        return result["clean_df"]
+    except Exception as exc:
+        run_logger.warning("Validation failed for %s, passing data through: %s", rules_key, exc)
+        return df
 
 
 def _map_channel_products(canonical: pd.DataFrame, channel: str,
@@ -224,9 +242,9 @@ def main_pipeline(
     batch_id: str | None = None,
     dry_run: bool = False,
 ) -> dict:
-    """Runs the full pipeline once: ingest every configured source,
-    validate/clean each, build the canonical order set, compute marts, and
-    write everything to the serving warehouse.
+    """Runs the full pipeline once: ingest every configured source, profile
+    each, build the canonical order/shipment sets and validate/quarantine
+    them, compute marts, and write everything to the serving warehouse.
 
     Returns a summary dict: per-source row counts, quality scorecards, mart
     row counts, and the list of tables actually written. When dry_run is
@@ -241,16 +259,16 @@ def main_pipeline(
 
     raw_frames = _ingest_all_sources(sources, tracker)
     tracker.close()
-    clean_frames, scorecards = _validate_and_clean(
-        raw_frames, baseline_manager, quarantine_manager, batch_id,
-    )
+    scorecards = _profile_sources(raw_frames, baseline_manager)
 
-    products_df = clean_frames.get("products", pd.DataFrame())
+    products_df = raw_frames.get("products", pd.DataFrame())
     sku_mapper = _build_sku_mapper(products_df)
-    orders = build_orders(clean_frames, sku_mapper=sku_mapper)
+    orders = build_orders(raw_frames, sku_mapper=sku_mapper)
+    orders = _validate_canonical(orders, "orders", quarantine_manager, batch_id)
 
     run_date = dt.datetime.now(dt.UTC).date()
-    shipments_fact = build_shipments_fact(clean_frames)
+    shipments_fact = build_shipments_fact(raw_frames)
+    shipments_fact = _validate_canonical(shipments_fact, "shipments", quarantine_manager, batch_id)
     inventory_fact = build_inventory_snapshot(products_df, snapshot_date=run_date)
     inventory_snapshot = inventory_fact.rename(columns={"snapshot_date_key": "snapshot_date"})
     preview_marts = (
@@ -262,7 +280,7 @@ def main_pipeline(
         return {
             "batch_id": batch_id,
             "dry_run": True,
-            "source_row_counts": {name: len(df) for name, df in clean_frames.items()},
+            "source_row_counts": {name: len(df) for name, df in raw_frames.items()},
             "quality": scorecards,
             "order_row_count": len(orders),
             "shipment_row_count": len(shipments_fact),
@@ -296,7 +314,7 @@ def main_pipeline(
 
     return {
         "batch_id": batch_id,
-        "source_row_counts": {name: len(df) for name, df in clean_frames.items()},
+        "source_row_counts": {name: len(df) for name, df in raw_frames.items()},
         "quality": scorecards,
         "order_row_count": len(orders),
         "stg_orders_row_count": len(all_orders),

@@ -1,7 +1,6 @@
 """Default per-source configuration for orchestration: how each raw
 ingested source maps onto the canonical order-line shape
-(src.transform.revenue_calculator) and which quality_rules.yaml entry
-each source is validated against.
+(src.transform.revenue_calculator).
 
 These are deliberately just *defaults* — callers of the transform tasks
 can still pass their own field_map (see transform_tasks.map_to_canonical_orders)
@@ -62,15 +61,3 @@ CANONICAL_DEFAULTS: dict[str, dict] = {
 }
 
 ORDER_SOURCES = tuple(CANONICAL_FIELD_MAPS.keys())
-
-# quality_rules.yaml keys its "shipping" rules once, shared by all three
-# shipping carriers.
-SOURCE_TO_RULES_KEY: dict[str, str] = {
-    "shipping_fedex": "shipping",
-    "shipping_ups": "shipping",
-    "shipping_usps": "shipping",
-}
-
-
-def rules_key_for_source(source_name: str) -> str:
-    return SOURCE_TO_RULES_KEY.get(source_name, source_name)

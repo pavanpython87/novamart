@@ -6,13 +6,32 @@ idempotent (already-seen, unchanged files are skipped).
 
 from __future__ import annotations
 
+import logging
+import zipfile
+
 import pandas as pd
+from lxml import etree
 from prefect import task
 from prefect.cache_policies import NO_CACHE
 
 from src.ingestion import file_watcher
 from src.ingestion.incremental_tracker import IncrementalTracker
 from src.ingestion.registry import SourceConfig, build_connector
+
+logger = logging.getLogger(__name__)
+
+# Malformed-file errors the chaos injector is expected to produce (emptied/
+# truncated CSV & JSON, corrupted XLSX, broken XML). These are data
+# problems with one file, not transient/infra failures, so they should be
+# logged and skipped rather than aborting the whole source's batch.
+EXTRACT_ERRORS = (
+    pd.errors.EmptyDataError,
+    pd.errors.ParserError,
+    ValueError,       # covers json.JSONDecodeError
+    OSError,
+    zipfile.BadZipFile,   # corrupted .xlsx (Amazon settlement files)
+    etree.LxmlError,      # covers etree.XMLSyntaxError (FedEx feeds)
+)
 
 
 def _extract_as_dataframe(connector) -> pd.DataFrame:
@@ -29,7 +48,17 @@ def _ingest_file_registry_source(source: SourceConfig, tracker: IncrementalTrack
         if not tracker.is_new_or_changed(source.name, file_path):
             continue
         connector = build_connector(source, file_path)
-        df = _extract_as_dataframe(connector)
+        try:
+            df = _extract_as_dataframe(connector)
+        except EXTRACT_ERRORS as exc:
+            # One corrupted file (chaos injection: emptied/truncated/malformed)
+            # shouldn't take down every other valid file for this source.
+            # Mark it processed with row_count=0 so it isn't retried forever
+            # — it will keep failing the same way until the file changes.
+            logger.warning("Skipping unparseable file source=%s file=%s error=%s",
+                            source.name, file_path, exc)
+            tracker.mark_processed(source.name, file_path, row_count=0)
+            continue
         frames.append(df)
         tracker.mark_processed(source.name, file_path, row_count=len(df))
     if not frames:
