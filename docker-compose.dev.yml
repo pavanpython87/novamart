@@ -1,0 +1,23 @@
+# Development overrides — used together with docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Mounts the live source tree so code edits are picked up without a
+# rebuild, and keeps debug-level logging.
+
+services:
+  pipeline:
+    volumes:
+      - ./src:/app/src
+      - ./scripts:/app/scripts
+      - ./config:/app/config
+      - ./data:/app/data
+    environment:
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+
+  dashboard:
+    volumes:
+      - ./dashboard:/app/dashboard
+      - ./src:/app/src
+    environment:
+      - LOG_LEVEL=DEBUG

@@ -1,0 +1,55 @@
+name: novamart
+
+services:
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: novamart-pipeline:latest
+    command: ["python", "scripts/run_pipeline.py", "--mode", "incremental"]
+    environment:
+      - WAREHOUSE_BACKEND=${WAREHOUSE_BACKEND:-duckdb}
+      - BQ_PROJECT_ID=${BQ_PROJECT_ID:-}
+      - BQ_DATASET=${BQ_DATASET:-novamart}
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./data/logs:/app/data/logs
+    networks:
+      - novamart-net
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    image: novamart-dashboard:latest
+    ports:
+      - "8501:8501"
+    environment:
+      - WAREHOUSE_BACKEND=${WAREHOUSE_BACKEND:-duckdb}
+    volumes:
+      - ./data/serving:/app/data/serving:ro
+    depends_on:
+      - pipeline
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - novamart-net
+
+  quality-reports:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./data/profiling_reports:/usr/share/nginx/html:ro
+    depends_on:
+      - pipeline
+    networks:
+      - novamart-net
+
+networks:
+  novamart-net:
+    driver: bridge
