@@ -1,7 +1,9 @@
 import datetime as dt
+from unittest.mock import MagicMock
 
 import yaml
 
+from src.orchestration.flows import main_pipeline as main_pipeline_module
 from src.orchestration.flows.main_pipeline import main_pipeline
 from src.simulator.simulator_main import generate_range
 
@@ -41,6 +43,36 @@ def test_main_pipeline_ingests_and_builds_marts(tmp_path):
     assert result["order_row_count"] > 0
     assert "stg_orders" in result["tables_written"]
     assert "mart_revenue_daily" in result["tables_written"]
+    # No warehouse.backend section in the test config and no BQ_PROJECT_ID
+    # in the test environment, so this must fall back to duckdb-only.
+    assert result["warehouse_backend"] == "duckdb"
+    assert result["bigquery_tables_written"] == []
+
+
+def test_main_pipeline_writes_bigquery_when_configured(tmp_path, monkeypatch):
+    incoming_dir = tmp_path / "incoming"
+    generate_range(dt.date(2024, 1, 1), dt.date(2024, 1, 1), incoming_dir, seed=1)
+    config_path = _write_pipeline_config(tmp_path, incoming_dir)
+
+    fake_bigquery_loader = MagicMock()
+    monkeypatch.setattr(
+        main_pipeline_module, "_build_bigquery_loader", lambda config: fake_bigquery_loader,
+    )
+    monkeypatch.setenv("WAREHOUSE_BACKEND", "both")
+
+    result = main_pipeline.fn(
+        tracker_db=str(tmp_path / "tracker.db"),
+        baseline_dir=str(tmp_path / "baselines"),
+        quarantine_db=str(tmp_path / "quarantine.db"),
+        serving_db=str(tmp_path / "serving.duckdb"),
+        sources_config=config_path,
+        batch_id="test-batch-bq",
+    )
+
+    assert result["warehouse_backend"] == "both"
+    assert "stg_orders" in result["bigquery_tables_written"]
+    assert "mart_revenue_daily" in result["bigquery_tables_written"]
+    assert fake_bigquery_loader.load_dataframe.call_count > 0
 
 
 def test_main_pipeline_no_data_returns_empty_summary(tmp_path):

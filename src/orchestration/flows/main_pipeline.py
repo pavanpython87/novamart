@@ -38,6 +38,8 @@ from prefect import flow, get_run_logger
 from src.cleaning.sku_mapper import SKUMapper
 from src.ingestion.incremental_tracker import IncrementalTracker
 from src.ingestion.registry import SourceConfig, load_sources
+from src.load.bigquery_loader import BigQueryLoader
+from src.load.dual_loader import DualLoader
 from src.load.duckdb_loader import DuckDBLoader
 from src.load.fact_builders import build_inventory_snapshot, build_shipments_fact
 from src.orchestration.canonical_mapping import (
@@ -46,9 +48,14 @@ from src.orchestration.canonical_mapping import (
     DEDUP_KEYS,
     ORDER_SOURCES,
 )
+from src.orchestration.config import PipelineConfig, load_pipeline_config
 from src.orchestration.tasks.dedup_tasks import dedup_orders
 from src.orchestration.tasks.ingest_tasks import ingest_source
-from src.orchestration.tasks.load_tasks import write_duckdb_tables
+from src.orchestration.tasks.load_tasks import (
+    load_table,
+    write_bigquery_tables,
+    write_duckdb_tables,
+)
 from src.orchestration.tasks.profile_tasks import profile_and_score
 from src.orchestration.tasks.transform_tasks import (
     calculate_order_economics,
@@ -232,6 +239,31 @@ def _merge_stg_orders(duckdb_loader: DuckDBLoader, orders: pd.DataFrame) -> pd.D
     return combined.drop_duplicates(ignore_index=True)
 
 
+def _build_bigquery_loader(config: PipelineConfig) -> BigQueryLoader | None:
+    """Constructs a BigQueryLoader when the configured backend needs one,
+    falling back to None (duckdb-only) on a missing project id or client
+    construction failure — mirrors dashboard/db_connector.py's
+    _resolve_backend fallback, so a misconfigured/unavailable BigQuery
+    backend degrades the run rather than failing it outright."""
+    if config.warehouse_backend not in ("bigquery", "both"):
+        return None
+    if not config.bq_project_id:
+        module_logger.warning(
+            "WAREHOUSE_BACKEND=%s but BQ_PROJECT_ID is not set; writing to DuckDB only.",
+            config.warehouse_backend,
+        )
+        return None
+    try:
+        loader = BigQueryLoader(project_id=config.bq_project_id, dataset=config.bq_dataset)
+        loader.ensure_dataset()
+        loader.ensure_table("fact_shipments")
+        loader.ensure_table("fact_inventory_daily")
+        return loader
+    except Exception as exc:
+        module_logger.warning("BigQuery unavailable (%s); writing to DuckDB only.", exc)
+        return None
+
+
 @flow(name="main-pipeline")
 def main_pipeline(
     tracker_db: str = "data/landing/novamart_tracker.db",
@@ -289,8 +321,14 @@ def main_pipeline(
             "tables_written": [],
         }
 
+    config = load_pipeline_config(sources_config)
+    bigquery_loader = _build_bigquery_loader(config)
+    effective_backend = config.warehouse_backend if bigquery_loader is not None else "duckdb"
+
     duckdb_loader = DuckDBLoader(serving_db)
     duckdb_loader.create_schema()
+    dual_loader = DualLoader(duckdb_loader, bigquery_loader=bigquery_loader, backend=effective_backend)
+
     all_orders = _merge_stg_orders(duckdb_loader, orders)
     marts = (
         build_all_marts(all_orders, inventory_snapshot=inventory_snapshot)
@@ -298,16 +336,18 @@ def main_pipeline(
     )
     tables_to_write = {"stg_orders": all_orders, **marts}
     written = write_duckdb_tables(duckdb_loader, tables_to_write)
+    bq_written = write_bigquery_tables(bigquery_loader, tables_to_write) if bigquery_loader else []
 
     # Load the non-order facts (shipping + inventory) into their star-schema
-    # tables. These use DuckDBLoader.upsert (keyed upserts) rather than the
-    # create-or-replace staging path above, so incremental runs accumulate.
+    # tables via DualLoader (keyed upserts, to both DuckDB and, when
+    # configured, BigQuery) rather than the create-or-replace staging path
+    # above, so incremental runs accumulate.
     facts_written = []
     if not shipments_fact.empty:
-        duckdb_loader.upsert("fact_shipments", shipments_fact)
+        load_table("fact_shipments", shipments_fact, dual_loader)
         facts_written.append("fact_shipments")
     if not inventory_fact.empty:
-        duckdb_loader.upsert("fact_inventory_daily", inventory_fact)
+        load_table("fact_inventory_daily", inventory_fact, dual_loader)
         facts_written.append("fact_inventory_daily")
 
     duckdb_loader.close()
@@ -322,4 +362,6 @@ def main_pipeline(
         "inventory_row_count": len(inventory_fact),
         "mart_row_counts": {name: len(df) for name, df in marts.items()},
         "tables_written": written + facts_written,
+        "warehouse_backend": effective_backend,
+        "bigquery_tables_written": (bq_written + facts_written) if bigquery_loader else [],
     }

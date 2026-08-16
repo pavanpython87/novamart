@@ -27,19 +27,23 @@ jobs:
       - name: Simulate yesterday's business data
         run: python scripts/simulate_new_data.py --date yesterday
 
+      - name: Write BigQuery service account key
+        if: ${{ secrets.BQ_PROJECT_ID != '' }}
+        run: echo '${{ secrets.BQ_SERVICE_ACCOUNT }}' > ${{ runner.temp }}/gcp-key.json
+
       - name: Run incremental pipeline
         env:
           WAREHOUSE_BACKEND: ${{ secrets.BQ_PROJECT_ID != '' && 'both' || 'duckdb' }}
           BQ_PROJECT_ID: ${{ secrets.BQ_PROJECT_ID }}
           BQ_DATASET: ${{ secrets.BQ_DATASET }}
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.BQ_SERVICE_ACCOUNT }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gcp-key.json
         run: python scripts/run_pipeline.py --mode incremental
 
       - name: Rebuild daily mart tables
         env:
           BQ_PROJECT_ID: ${{ secrets.BQ_PROJECT_ID }}
           BQ_DATASET: ${{ secrets.BQ_DATASET }}
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.BQ_SERVICE_ACCOUNT }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gcp-key.json
         run: python scripts/run_pipeline.py --mode rebuild-marts --scope daily
 
       - name: Upload quality report

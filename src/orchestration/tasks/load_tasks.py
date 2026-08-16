@@ -1,6 +1,6 @@
 """Loading tasks: writes star-schema tables via DualLoader, and writes
 free-form staging/mart tables (which don't have a fixed schema_manager
-DDL) straight to the local DuckDB connection.
+DDL) straight to the local DuckDB connection (and, optionally, BigQuery).
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ import pandas as pd
 from prefect import task
 from prefect.cache_policies import NO_CACHE
 
+from src.load.bigquery_loader import BigQueryLoader
 from src.load.dual_loader import DualLoader
 from src.load.duckdb_loader import DuckDBLoader
 
@@ -38,5 +39,22 @@ def write_duckdb_tables(duckdb_loader: DuckDBLoader, tables: dict[str, pd.DataFr
         duckdb_loader.conn.register("_incoming_df", df)
         duckdb_loader.conn.execute(f"CREATE OR REPLACE TABLE {name} AS SELECT * FROM _incoming_df")
         duckdb_loader.conn.unregister("_incoming_df")
+        written.append(name)
+    return written
+
+
+@task(name="write-bigquery-tables", retries=3, retry_delay_seconds=10, cache_policy=NO_CACHE)
+def write_bigquery_tables(bigquery_loader: BigQueryLoader, tables: dict[str, pd.DataFrame]) -> list[str]:
+    """Replaces each named table's contents in BigQuery via a full-table
+    WRITE_TRUNCATE load. Mirrors write_duckdb_tables for staging/mart tables
+    that aren't part of the fixed star schema (schema_manager.TABLE_SCHEMAS),
+    so BigQueryLoader.upsert's fixed-primary-key MERGE logic doesn't apply —
+    BigQuery's load-job schema autodetection creates or replaces the table
+    as needed."""
+    written = []
+    for name, df in tables.items():
+        if df.empty:
+            continue
+        bigquery_loader.load_dataframe(name, df, write_disposition="WRITE_TRUNCATE")
         written.append(name)
     return written

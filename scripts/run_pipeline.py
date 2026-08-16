@@ -21,6 +21,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from dotenv import load_dotenv  # noqa: E402
+
+# Populate os.environ from a local .env file (see .env.example) before any
+# downstream module reads WAREHOUSE_BACKEND/BQ_PROJECT_ID/BQ_DATASET via
+# os.environ.get(...) — a no-op if no .env file exists (e.g. in CI/Docker,
+# where these are set directly in the environment).
+load_dotenv()
+
 from src.orchestration.flows.backfill_flow import backfill_flow  # noqa: E402
 from src.orchestration.flows.export_flow import export_flow  # noqa: E402
 from src.orchestration.flows.full_refresh_flow import full_refresh_flow  # noqa: E402

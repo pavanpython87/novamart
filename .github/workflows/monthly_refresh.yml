@@ -24,12 +24,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Write BigQuery service account key
+        if: ${{ secrets.BQ_PROJECT_ID != '' }}
+        run: echo '${{ secrets.BQ_SERVICE_ACCOUNT }}' > ${{ runner.temp }}/gcp-key.json
+
       - name: Full pipeline refresh
         env:
           WAREHOUSE_BACKEND: ${{ secrets.BQ_PROJECT_ID != '' && 'both' || 'duckdb' }}
           BQ_PROJECT_ID: ${{ secrets.BQ_PROJECT_ID }}
           BQ_DATASET: ${{ secrets.BQ_DATASET }}
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.BQ_SERVICE_ACCOUNT }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gcp-key.json
         run: python scripts/run_pipeline.py --mode full-refresh
 
       - name: Rebuild all mart tables

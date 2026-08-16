@@ -1,11 +1,16 @@
 import datetime as dt
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
 
 from src.load.dual_loader import DualLoader
 from src.load.duckdb_loader import DuckDBLoader
-from src.orchestration.tasks.load_tasks import load_table, write_duckdb_tables
+from src.orchestration.tasks.load_tasks import (
+    load_table,
+    write_bigquery_tables,
+    write_duckdb_tables,
+)
 
 FACT_ORDERS_COLUMNS = [
     "order_id", "customer_key", "product_key", "channel_key", "date_key",
@@ -51,3 +56,24 @@ def test_write_duckdb_tables_creates_and_replaces_tables(duckdb_loader):
 def test_write_duckdb_tables_skips_empty_frames(duckdb_loader):
     written = write_duckdb_tables.fn(duckdb_loader, {"empty_mart": pd.DataFrame()})
     assert written == []
+
+
+def test_write_bigquery_tables_loads_nonempty_frames():
+    bigquery_loader = MagicMock()
+    tables = {
+        "stg_orders": pd.DataFrame({"order_id": ["O1"]}),
+        "mart_revenue_daily": pd.DataFrame({"date": ["2024-01-01"], "revenue": [100.0]}),
+    }
+    written = write_bigquery_tables.fn(bigquery_loader, tables)
+    assert written == ["stg_orders", "mart_revenue_daily"]
+    assert bigquery_loader.load_dataframe.call_count == 2
+    bigquery_loader.load_dataframe.assert_any_call(
+        "stg_orders", tables["stg_orders"], write_disposition="WRITE_TRUNCATE",
+    )
+
+
+def test_write_bigquery_tables_skips_empty_frames():
+    bigquery_loader = MagicMock()
+    written = write_bigquery_tables.fn(bigquery_loader, {"empty_mart": pd.DataFrame()})
+    assert written == []
+    bigquery_loader.load_dataframe.assert_not_called()
