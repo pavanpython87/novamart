@@ -38,7 +38,18 @@ SOURCE_EXTRA_KWARGS: dict[str, dict] = {
                      "delivery_date", "status", "weight_oz"],
         "delimiter": "|",
     },
+    # UPS exports a headerless CSV; columns map it to the same canonical
+    # field names the flat-file USPS parser produces.
+    "shipping_ups": {
+        "columns": ["tracking_number", "reference_order_id", "ship_date",
+                     "delivery_date", "status", "weight_kg"],
+        "sep": ",",
+    },
     "products": {"table": "products"},
+    # Amazon's settlement export has 4 sheets (Orders/Returns/Fee
+    # Breakdown/Adjustments); orchestration only needs the Orders sheet as
+    # a flat DataFrame, not a dict of all four.
+    "amazon": {"sheet_name": "Orders"},
 }
 
 

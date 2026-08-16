@@ -15,9 +15,11 @@ def test_json_connector_flattens_v3_items(tmp_path):
     conn = JSONConnector(path)
     conn.connect()
     df = conn.extract()
-    assert len(df) == 10
+    # One row per line item, so >= one row per transaction.
+    assert len(df) >= 10
     assert "item_count" in df.columns
     assert "payment.method" in df.columns
+    assert {"sku", "quantity", "line_total"} <= set(df.columns)
 
 
 def test_json_connector_flattens_v4_line_items(tmp_path):
@@ -28,9 +30,10 @@ def test_json_connector_flattens_v4_line_items(tmp_path):
     conn = JSONConnector(path)
     conn.connect()
     df = conn.extract()
-    assert len(df) == 10
+    assert len(df) >= 10
     assert "item_count" in df.columns
     assert (df["item_count"] >= 0).all()
+    assert {"sku", "quantity", "line_total"} <= set(df.columns)
 
 
 def test_json_connector_recovers_truncated_json(tmp_path):

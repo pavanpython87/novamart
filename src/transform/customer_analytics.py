@@ -93,6 +93,19 @@ def calculate_rfm(orders: pd.DataFrame, as_of: pd.Timestamp | None = None) -> pd
         ])
 
     dates = _as_datetime(orders["order_date"])
+    valid = dates.notna()
+    if not valid.all():
+        # Orders whose dates can't be parsed can't contribute a meaningful
+        # recency; dropping them avoids NaN recency values that would
+        # break quintile scoring below.
+        orders = orders.loc[valid]
+        dates = dates.loc[valid]
+    if orders.empty:
+        return pd.DataFrame(columns=[
+            "customer_key", "recency", "frequency", "monetary",
+            "r_score", "f_score", "m_score", "rfm_segment",
+        ])
+
     as_of = pd.Timestamp(as_of) if as_of is not None else dates.max()
 
     grouped = (

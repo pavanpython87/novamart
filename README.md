@@ -9,9 +9,11 @@ See [PROJECT_PLAN.md](./PROJECT_PLAN.md) for the full technical specification.
 
 ## Status
 
-🚧 In development — Phase 1 (Foundation + data simulator).
+🚧 In development — Phase 6 (Dashboards) complete.
+Phases 1-5 (simulator, ingestion, validation/cleaning/dedup, transform/load,
+orchestration/monitoring/Docker) are done.
 
-## Quickstart (once Phase 1-4 are complete)
+## Quickstart
 
 ```bash
 pip install -r requirements.txt
@@ -19,6 +21,16 @@ cp .env.example .env
 python scripts/generate_historical_data.py
 python scripts/run_pipeline.py --mode full-refresh
 streamlit run dashboard/app.py
+```
+
+Other run modes (see PROJECT_PLAN.md 3.2):
+
+```bash
+python scripts/run_pipeline.py --mode incremental
+python scripts/run_pipeline.py --mode rebuild-marts --scope daily
+python scripts/run_pipeline.py --mode backfill --start-date 2024-01-01 --end-date 2024-06-30
+python scripts/run_pipeline.py --mode export --formats csv excel pdf
+python scripts/run_pipeline.py --mode dry-run
 ```
 
 Or via Docker:

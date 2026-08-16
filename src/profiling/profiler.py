@@ -17,11 +17,20 @@ NUMERIC_KINDS = "iuf"  # int, unsigned int, float
 def _column_profile(series: pd.Series) -> dict:
     total = len(series)
     null_count = int(series.isna().sum())
+
+    try:
+        distinct_count = int(series.nunique(dropna=True))
+    except TypeError:
+        # Unhashable values (e.g. lists produced by nested-JSON
+        # flattening) can't be counted via nunique; fall back to their
+        # string representation so profiling still completes.
+        distinct_count = int(series.dropna().astype(str).nunique())
+
     profile = {
         "dtype": str(series.dtype),
         "null_count": null_count,
         "null_pct": round(null_count / total * 100, 2) if total else 0.0,
-        "distinct_count": int(series.nunique(dropna=True)),
+        "distinct_count": distinct_count,
     }
 
     non_null = series.dropna()

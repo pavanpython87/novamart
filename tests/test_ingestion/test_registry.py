@@ -58,3 +58,16 @@ def test_build_connector_xml(tmp_path):
     sources = load_sources()
     conn = build_connector(sources["shipping_fedex"], path)
     assert isinstance(conn, XMLConnector)
+
+
+def test_build_connector_ups_headerless_csv_uses_columns(tmp_path):
+    path = generate_shipping_batch("ups", dt.date(2024, 3, 1), 5, tmp_path,
+                                    rng=random.Random(1))
+    sources = load_sources()
+    conn = build_connector(sources["shipping_ups"], path)
+    assert isinstance(conn, CSVConnector)
+    conn.connect()
+    df = conn.extract()
+    assert len(df) == 5
+    assert list(df.columns) == ["tracking_number", "reference_order_id", "ship_date",
+                                "delivery_date", "status", "weight_kg"]

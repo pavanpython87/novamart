@@ -100,4 +100,14 @@ class JSONConnector(BaseConnector):
         normalized = [_normalize_transaction(r) for r in records]
         if not normalized:
             return pd.DataFrame()
-        return pd.json_normalize(normalized, sep=".")
+        df = pd.json_normalize(normalized, sep=".")
+
+        # POS line items: explode the per-transaction "items" array into one
+        # row per line item so each line carries its own sku/quantity/price
+        # (rather than a list-valued column that downstream can't join on).
+        if "items" in df.columns and not df.empty:
+            exploded = df.explode("items").reset_index(drop=True)
+            items = pd.json_normalize(exploded.pop("items"))
+            df = pd.concat([exploded.reset_index(drop=True),
+                            items.reset_index(drop=True)], axis=1)
+        return df

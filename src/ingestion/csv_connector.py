@@ -35,10 +35,12 @@ def detect_dialect(sample_text: str) -> csv.Dialect:
 
 
 class CSVConnector(BaseConnector):
-    def __init__(self, source_path, encoding: str | None = None, sep: str | None = None):
+    def __init__(self, source_path, encoding: str | None = None, sep: str | None = None,
+                 columns: list[str] | None = None):
         super().__init__(source_path)
         self._forced_encoding = encoding
         self._forced_sep = sep
+        self.columns = columns
         self.encoding: str | None = None
         self.sep: str | None = None
 
@@ -58,6 +60,13 @@ class CSVConnector(BaseConnector):
 
         # Skip fully-blank lines (Shopify export quirk: blank rows between blocks)
         cleaned = "\n".join(line for line in text.splitlines() if line.strip() != "")
-        df = pd.read_csv(io.StringIO(cleaned), sep=self.sep, dtype=str, keep_default_na=False,
-                          na_values=[""])
+        if self.columns is not None:
+            # Headerless export (e.g. the UPS feed) parsed against a
+            # caller-supplied column list.
+            df = pd.read_csv(io.StringIO(cleaned), sep=self.sep, header=None,
+                             names=self.columns, dtype=str, keep_default_na=False,
+                             na_values=[""])
+        else:
+            df = pd.read_csv(io.StringIO(cleaned), sep=self.sep, dtype=str,
+                             keep_default_na=False, na_values=[""])
         return df
