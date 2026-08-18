@@ -43,6 +43,10 @@ jobs:
         run: python scripts/run_pipeline.py --mode full-refresh
 
       - name: Rebuild all mart tables
+        env:
+          WAREHOUSE_BACKEND: ${{ vars.BQ_PROJECT_ID != '' && 'both' || 'duckdb' }}
+          BQ_PROJECT_ID: ${{ vars.BQ_PROJECT_ID }}
+          BQ_DATASET: ${{ vars.BQ_DATASET }}
         run: python scripts/run_pipeline.py --mode rebuild-marts --scope all
 
       - name: Export monthly reports

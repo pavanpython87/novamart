@@ -21,6 +21,13 @@ from src.load.schema_manager import (
 
 DEFAULT_DATASET = "novamart"
 
+# Hard per-query safety cap, well under BigQuery's 1 TB/month free-tier
+# query allowance. Guards against a single runaway/unfiltered query (e.g. a
+# future schema bug) silently burning through the whole month's free quota
+# in one shot — at this project's actual data volumes (megabytes), queries
+# never come close to this limit, so it should never trigger in normal use.
+MAX_QUERY_BYTES_BILLED = 10 * 1024**3  # 10 GB
+
 
 class BigQueryLoader:
     def __init__(self, project_id: str, dataset: str = DEFAULT_DATASET, client=None):
@@ -58,7 +65,10 @@ class BigQueryLoader:
         written to it) or the query otherwise fails, mirroring
         DuckDBLoader's read-side fallback in rebuild_marts_flow."""
         try:
-            return self.client.query(f"SELECT * FROM `{self._table_id(table_name)}`").to_dataframe()
+            job_config = bigquery.QueryJobConfig(maximum_bytes_billed=MAX_QUERY_BYTES_BILLED)
+            return self.client.query(
+                f"SELECT * FROM `{self._table_id(table_name)}`", job_config=job_config,
+            ).to_dataframe()
         except Exception:
             return pd.DataFrame()
 
@@ -92,4 +102,5 @@ class BigQueryLoader:
             f"WHEN MATCHED THEN UPDATE SET {update_set}\n"
             f"WHEN NOT MATCHED THEN INSERT ({insert_cols}) VALUES ({insert_vals})"
         )
-        self.client.query(sql).result()
+        job_config = bigquery.QueryJobConfig(maximum_bytes_billed=MAX_QUERY_BYTES_BILLED)
+        self.client.query(sql, job_config=job_config).result()
