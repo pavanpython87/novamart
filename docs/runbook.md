@@ -91,12 +91,16 @@ without mutating `data/serving/` or `data/quarantine/`.
 
 All three scheduled workflows also accept `workflow_dispatch` for manual
 triggering from the Actions tab. `WAREHOUSE_BACKEND` is set to `both` when
-`secrets.BQ_PROJECT_ID` is configured, `duckdb` otherwise — so these
+`vars.BQ_PROJECT_ID` is configured, `duckdb` otherwise — so these
 workflows run against local DuckDB out of the box with zero required
-secrets, and start writing to BigQuery automatically the moment the repo's
-secrets are configured. The commit-run-log steps use `|| true` on both
-`git commit` and `git push` so a no-op day (nothing changed in
-`data/logs/`) doesn't fail the workflow.
+config, and start writing to BigQuery automatically the moment the repo's
+`BQ_PROJECT_ID`/`BQ_DATASET`/`GCP_WORKLOAD_IDENTITY_PROVIDER`/
+`GCP_SERVICE_ACCOUNT` repo variables are configured. BigQuery auth uses
+Workload Identity Federation (`google-github-actions/auth@v2`) rather than
+a downloaded service account key — no long-lived credential is stored in
+the repo. The commit-run-log steps use `|| true` on both `git commit` and
+`git push` so a no-op day (nothing changed in `data/logs/`) doesn't fail
+the workflow.
 
 ## Troubleshooting
 

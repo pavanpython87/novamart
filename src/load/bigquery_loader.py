@@ -8,6 +8,7 @@ access — tests pass in a mock client.
 
 from __future__ import annotations
 
+import pandas as pd
 from google.cloud import bigquery
 
 from src.load.schema_manager import (
@@ -50,6 +51,16 @@ class BigQueryLoader:
             table.clustering_fields = cluster_cols
 
         return self.client.create_table(table, exists_ok=True)
+
+    def read_dataframe(self, table_name: str) -> pd.DataFrame:
+        """Reads an entire table back as a DataFrame. Returns an empty
+        DataFrame if the table doesn't exist yet (e.g. no pipeline run has
+        written to it) or the query otherwise fails, mirroring
+        DuckDBLoader's read-side fallback in rebuild_marts_flow."""
+        try:
+            return self.client.query(f"SELECT * FROM `{self._table_id(table_name)}`").to_dataframe()
+        except Exception:
+            return pd.DataFrame()
 
     def load_dataframe(self, table_name: str, df, write_disposition: str = "WRITE_APPEND"):
         """Batch-loads a DataFrame into a table via a load job."""

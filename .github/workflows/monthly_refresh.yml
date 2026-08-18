@@ -5,6 +5,10 @@ on:
     - cron: "0 3 1 * *"    # 3:00 AM UTC on the 1st of every month
   workflow_dispatch:
 
+permissions:
+  contents: write
+  id-token: write
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
@@ -24,16 +28,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Write BigQuery service account key
-        if: ${{ secrets.BQ_PROJECT_ID != '' }}
-        run: echo '${{ secrets.BQ_SERVICE_ACCOUNT }}' > ${{ runner.temp }}/gcp-key.json
+      - name: Authenticate to Google Cloud
+        if: ${{ vars.BQ_PROJECT_ID != '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
       - name: Full pipeline refresh
         env:
-          WAREHOUSE_BACKEND: ${{ secrets.BQ_PROJECT_ID != '' && 'both' || 'duckdb' }}
-          BQ_PROJECT_ID: ${{ secrets.BQ_PROJECT_ID }}
-          BQ_DATASET: ${{ secrets.BQ_DATASET }}
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gcp-key.json
+          WAREHOUSE_BACKEND: ${{ vars.BQ_PROJECT_ID != '' && 'both' || 'duckdb' }}
+          BQ_PROJECT_ID: ${{ vars.BQ_PROJECT_ID }}
+          BQ_DATASET: ${{ vars.BQ_DATASET }}
         run: python scripts/run_pipeline.py --mode full-refresh
 
       - name: Rebuild all mart tables

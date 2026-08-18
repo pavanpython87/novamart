@@ -35,6 +35,28 @@ def test_ensure_table_dimension_table_has_no_partitioning():
     assert table.clustering_fields is None
 
 
+def test_read_dataframe_queries_full_table():
+    loader, client = _make_loader()
+    expected = pd.DataFrame([{"order_id": "O1"}])
+    client.query.return_value.to_dataframe.return_value = expected
+
+    result = loader.read_dataframe("stg_orders")
+
+    assert client.query.called
+    sql = client.query.call_args[0][0]
+    assert "SELECT * FROM `proj.novamart.stg_orders`" in sql
+    pd.testing.assert_frame_equal(result, expected)
+
+
+def test_read_dataframe_returns_empty_df_on_query_failure():
+    loader, client = _make_loader()
+    client.query.side_effect = Exception("table not found")
+
+    result = loader.read_dataframe("stg_orders")
+
+    assert result.empty
+
+
 def test_load_dataframe_runs_load_job_and_waits_for_result():
     loader, client = _make_loader()
     mock_job = MagicMock()

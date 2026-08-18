@@ -84,7 +84,7 @@ def main() -> None:
     elif args.mode == "full-refresh":
         result = full_refresh_flow(sources_config=args.sources_config)
     elif args.mode == "rebuild-marts":
-        result = rebuild_marts_flow(scope=args.scope)
+        result = rebuild_marts_flow(scope=args.scope, sources_config=args.sources_config)
     elif args.mode == "backfill":
         result = backfill_flow(
             args.start_date, args.end_date,
